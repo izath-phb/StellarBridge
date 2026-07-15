@@ -1,14 +1,20 @@
 # StellarBridge 🌉
 **A Global Decentralized Payment and Financial Access Network Powered by Stellar Soroban**
 
+🚀 **Live Demo:** [https://stellar-bridge-livid.vercel.app/](https://stellar-bridge-livid.vercel.app/)
+
 ## 📸 Platform Previews
 
 <!-- TODO: Ambil 4 screenshot aplikasi Anda, simpan di folder 'assets', dan beri nama screenshot1.png, screenshot2.png, dst. -->
-| Landing Page & Live Ticker | Dashboard & Wallet Connection |
+| Landing Page | Dashboard & Wallet |
 |:---:|:---:|
-| <img src="./assets/screenshot1.png" width="400"> | <img src="./assets/screenshot2.png" width="400"> |
-| **Smart Escrow & Payments** | **Merchant Invoices & DAO** |
-| <img src="./assets/screenshot3.png" width="400"> | <img src="./assets/screenshot4.png" width="400"> |
+| <img src="./assets/landing.png" width="400"> | <img src="./assets/dashboard.png" width="400"> |
+| **Payments & Transfers** | **Smart Escrow** |
+| <img src="./assets/payments.png" width="400"> | <img src="./assets/escrow.png" width="400"> |
+| **Merchant Hub** | **Tokenized Invoices** |
+| <img src="./assets/merchant.png" width="400"> | <img src="./assets/invoices.png" width="400"> |
+| **Community (DAO)** | **Reputation Profile** |
+| <img src="./assets/community.png" width="400"> | <img src="./assets/profile.png" width="400"> |
 
 
 ## 1. Project Overview
@@ -44,19 +50,19 @@ StellarBridge solves these problems by providing an all-in-one Web3 ecosystem:
 ## 6. Architecture Diagram
 ```mermaid
 graph TD
-    User(User / Merchant / Freelancer) --> Frontend[Next.js Frontend]
-    Frontend --> Backend[Node.js / Express Backend]
-    Backend --> DB[(PostgreSQL + Prisma)]
-    Frontend --> Freighter[Freighter Wallet SDK]
-    Freighter --> Soroban[Soroban Smart Contracts]
-    Soroban --> Stellar[Stellar Testnet]
+    User("User, Merchant, Freelancer") --> Frontend["Next.js Frontend"]
+    Frontend --> Backend["Node.js Backend"]
+    Backend --> DB[("PostgreSQL DB")]
+    Frontend --> Freighter["Freighter Wallet SDK"]
+    Freighter --> Soroban["Soroban Smart Contracts"]
+    Soroban --> Stellar["Stellar Testnet"]
     
-    subgraph Soroban Smart Contracts
-        Escrow(Escrow Contract)
-        Payment(Payment Contract)
-        Invoice(Invoice Contract)
-        DAO(Community Contract)
-        Reputation(Reputation Contract)
+    subgraph Soroban_Contracts ["Soroban Smart Contracts"]
+        Escrow["Escrow Contract"]
+        Payment["Payment Contract"]
+        Invoice["Invoice Contract"]
+        DAO["Community Contract"]
+        Reputation["Reputation Contract"]
     end
 ```
 
