@@ -6,15 +6,15 @@
 ## 📸 Platform Previews
 
 <!-- TODO: Ambil 4 screenshot aplikasi Anda, simpan di folder 'assets', dan beri nama screenshot1.png, screenshot2.png, dst. -->
-| Landing Page | Dashboard & Wallet |
+| Landing Page | Dashboard |
 |:---:|:---:|
 | <img src="./assets/landing.png" width="400"> | <img src="./assets/dashboard.png" width="400"> |
-| **Payments & Transfers** | **Smart Escrow** |
-| <img src="./assets/payments.png" width="400"> | <img src="./assets/escrow.png" width="400"> |
-| **Merchant Hub** | **Tokenized Invoices** |
-| <img src="./assets/merchant.png" width="400"> | <img src="./assets/invoices.png" width="400"> |
-| **Community (DAO)** | **Reputation Profile** |
-| <img src="./assets/community.png" width="400"> | <img src="./assets/profile.png" width="400"> |
+| **Wallet** | **Payments & Transfers** |
+| <img src="./assets/wallet.png" width="400"> | <img src="./assets/payments.png" width="400"> |
+| **Smart Escrow** | **Merchant Hub** |
+| <img src="./assets/escrow.png" width="400"> | <img src="./assets/merchant.png" width="400"> |
+| **Tokenized Invoices** | **Community (DAO)** |
+| <img src="./assets/invoices.png" width="400"> | <img src="./assets/community.png" width="400"> |
 
 
 ## 1. Project Overview
