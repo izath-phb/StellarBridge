@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = [
+    "community_contract",
+    "escrow_contract",
+    "invoice_contract",
+    "payment_contract",
+    "reputation_contract"
+]
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true

@@ -1,0 +1,8 @@
+node_modules/
+target/
+.env
+.next/
+.soroban/
+dist/
+build/
+.vscode/

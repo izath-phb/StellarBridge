@@ -1,0 +1,116 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  walletAddress String    @unique
+  username      String?
+  email         String?   @unique
+  trustScore    Int       @default(100)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  wallets       Wallet[]
+  transactionsAsSender Transaction[] @relation("SenderTransactions")
+  transactionsAsReceiver Transaction[] @relation("ReceiverTransactions")
+  merchants     Merchant[]
+  escrowsAsClient Escrow[] @relation("ClientEscrows")
+  escrowsAsFreelancer Escrow[] @relation("FreelancerEscrows")
+}
+
+model Wallet {
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  address       String    @unique
+  balanceXLM    Float     @default(0.0)
+  balanceUSDC   Float     @default(0.0)
+  balanceEURC   Float     @default(0.0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Transaction {
+  id            String    @id @default(uuid())
+  hash          String?   @unique
+  senderId      String?
+  sender        User?     @relation("SenderTransactions", fields: [senderId], references: [id])
+  receiverId    String?
+  receiver      User?     @relation("ReceiverTransactions", fields: [receiverId], references: [id])
+  assetCode     String    // XLM, USDC, EURC
+  amount        Float
+  status        String    @default("PENDING") // PENDING, SUCCESS, FAILED
+  type          String    // PAYMENT, ESCROW_DEPOSIT, ESCROW_RELEASE, INVOICE_PAYMENT
+  createdAt     DateTime  @default(now())
+}
+
+model Merchant {
+  id            String    @id @default(uuid())
+  ownerId       String
+  owner         User      @relation(fields: [ownerId], references: [id])
+  name          String
+  description   String?
+  logoUrl       String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  products      Product[]
+  invoices      Invoice[]
+}
+
+model Product {
+  id            String    @id @default(uuid())
+  merchantId    String
+  merchant      Merchant  @relation(fields: [merchantId], references: [id])
+  name          String
+  description   String?
+  price         Float
+  assetCode     String    @default("USDC")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Invoice {
+  id            String    @id @default(uuid())
+  invoiceNumber String    @unique
+  merchantId    String
+  merchant      Merchant  @relation(fields: [merchantId], references: [id])
+  amount        Float
+  assetCode     String    @default("USDC")
+  status        String    @default("PENDING") // PENDING, PAID, COMPLETED
+  dueDate       DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Escrow {
+  id            String    @id @default(uuid())
+  escrowId      String    @unique // From Smart Contract
+  clientId      String
+  client        User      @relation("ClientEscrows", fields: [clientId], references: [id])
+  freelancerId  String
+  freelancer    User      @relation("FreelancerEscrows", fields: [freelancerId], references: [id])
+  amount        Float
+  assetCode     String    @default("USDC")
+  status        String    @default("CREATED") // CREATED, FUNDED, APPROVED, RELEASED, REFUNDED
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Community {
+  id            String    @id @default(uuid())
+  name          String
+  description   String?
+  treasuryBalance Float   @default(0.0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
