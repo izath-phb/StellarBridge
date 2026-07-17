@@ -40,9 +40,9 @@ export const MOCK_ESCROWS = [
 ];
 
 export const MOCK_INVOICES = [
-  { id: "INV-2026-001", amount: "10000", asset: "USDC", status: "PENDING", client: "Acme Corp", dueDate: "2026-07-30", createdAt: "2026-07-13" },
-  { id: "INV-2026-002", amount: "2500", asset: "USDC", status: "PAID", client: "Tech Startup", dueDate: "2026-07-15", createdAt: "2026-07-05" },
-  { id: "INV-2026-003", amount: "800", asset: "XLM", status: "COMPLETED", client: "Creative Agency", dueDate: "2026-07-10", createdAt: "2026-06-30" },
+  { id: "INV-2026-001", amount: "10000", asset: "USDC", status: "PENDING", client: "Acme Corp", dueDate: "2026-07-30", createdAt: "2026-07-13", clientAddress: "" },
+  { id: "INV-2026-002", amount: "2500", asset: "USDC", status: "PAID", client: "Tech Startup", dueDate: "2026-07-15", createdAt: "2026-07-05", clientAddress: "" },
+  { id: "INV-2026-003", amount: "800", asset: "XLM", status: "COMPLETED", client: "Creative Agency", dueDate: "2026-07-10", createdAt: "2026-06-30", clientAddress: "" },
 ];
 
 export const MOCK_MERCHANTS = [

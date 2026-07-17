@@ -95,3 +95,38 @@ StellarBridge democratizes access to financial tools, allowing freelancers in de
 - **Invoice Contract:** `CDQR2I6PRRIHQCTMSWOMBQLP6H4VGTKVJKAC4KOZH5GSJ7TPG6447IWC`
 - **Community/DAO Contract:** `CA26447IFVJ36BGCBYWZN5MP3ZHJA3UVJF5IPIVLSQN5JIISGDZZACNX`
 - **Reputation Contract:** `CCW464H6XGLBYXD5NQCFHDGSB2ARSYRM3437LGDBJJRMX7BDIHWWKZXB`
+
+## 12. How to Run Locally
+
+### Prerequisites
+- [Node.js](https://nodejs.org/) (v18 or higher)
+- [Rust](https://www.rust-lang.org/) & [Soroban CLI](https://soroban.stellar.org/docs/getting-started/setup) (for modifying smart contracts)
+- [Freighter Wallet](https://www.freighter.app/) Browser Extension
+
+### 1. Clone the Repository
+```bash
+git clone https://github.com/izath-phb/StellarBridge.git
+cd StellarBridge
+```
+
+### 2. Frontend Setup (Next.js)
+```bash
+cd frontend
+npm install
+npm run dev
+```
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+### 3. Backend Setup (Node.js)
+```bash
+cd backend
+npm install
+npm run dev
+```
+
+### 4. Smart Contracts (Soroban)
+If you want to compile the smart contracts manually:
+```bash
+cd contracts
+stellar contract build
+```
