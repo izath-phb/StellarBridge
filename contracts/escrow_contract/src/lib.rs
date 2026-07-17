@@ -28,14 +28,13 @@ pub struct EscrowContract;
 impl EscrowContract {
     pub fn create_escrow(
         env: Env,
+        escrow_id: Symbol,
         client: Address,
         freelancer: Address,
         token: Address,
         amount: i128,
-    ) -> Symbol {
+    ) {
         client.require_auth();
-
-        let escrow_id = Symbol::new(&env, "ESCROW_1"); // Simplified ID generation for MVP
 
         let escrow = Escrow {
             client: client.clone(),
@@ -46,8 +45,6 @@ impl EscrowContract {
         };
 
         env.storage().instance().set(&escrow_id, &escrow);
-
-        escrow_id
     }
 
     pub fn deposit_payment(env: Env, escrow_id: Symbol) {

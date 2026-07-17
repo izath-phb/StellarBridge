@@ -32,12 +32,11 @@ impl InvoiceContract {
         client: Address,
         token: Address,
         amount: i128,
-    ) -> Symbol {
+    ) {
         merchant.require_auth();
 
-        let key = Symbol::new(&env, "INVOICE");
         let invoice = Invoice {
-            id: invoice_id,
+            id: invoice_id.clone(),
             merchant,
             client,
             token,
@@ -45,12 +44,11 @@ impl InvoiceContract {
             status: InvoiceStatus::Pending,
         };
 
-        env.storage().instance().set(&key, &invoice);
-        key
+        env.storage().instance().set(&invoice_id, &invoice);
     }
 
-    pub fn pay_invoice(env: Env, invoice_key: Symbol) {
-        let mut invoice: Invoice = env.storage().instance().get(&invoice_key).unwrap();
+    pub fn pay_invoice(env: Env, invoice_id: String) {
+        let mut invoice: Invoice = env.storage().instance().get(&invoice_id).unwrap();
         invoice.client.require_auth();
 
         if invoice.status != InvoiceStatus::Pending {
@@ -61,11 +59,11 @@ impl InvoiceContract {
         token_client.transfer(&invoice.client, &invoice.merchant, &invoice.amount);
 
         invoice.status = InvoiceStatus::Paid;
-        env.storage().instance().set(&invoice_key, &invoice);
+        env.storage().instance().set(&invoice_id, &invoice);
     }
 
-    pub fn verify_invoice(env: Env, invoice_key: Symbol) -> InvoiceStatus {
-        let invoice: Invoice = env.storage().instance().get(&invoice_key).unwrap();
+    pub fn verify_invoice(env: Env, invoice_id: String) -> InvoiceStatus {
+        let invoice: Invoice = env.storage().instance().get(&invoice_id).unwrap();
         invoice.status
     }
 }

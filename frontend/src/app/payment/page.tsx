@@ -8,7 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useWallet } from "@/lib/wallet-context";
-import { MOCK_TRANSACTIONS } from "@/lib/constants";
+import { MOCK_ISSUER_PUBKEY } from "@/lib/constants";
+import type * as StellarSdk from "@stellar/stellar-sdk";
+import { QRCodeSVG } from "qrcode.react";
+import { useEffect } from "react";
 
 type Tab = "send" | "receive" | "request";
 type Asset = "XLM" | "USDC" | "EURC";
@@ -22,17 +25,104 @@ export default function PaymentPage() {
   const [memo, setMemo] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const [requestGenerated, setRequestGenerated] = useState(false);
+  const [transactions, setTransactions] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (isConnected && publicKey) {
+      const fetchTxs = async () => {
+        try {
+          const StellarSdk = await import("@stellar/stellar-sdk");
+          const server = new StellarSdk.Horizon.Server("https://horizon-testnet.stellar.org");
+          const payments = await server.payments().forAccount(publicKey).order("desc").limit(10).call();
+          
+          const formatted = payments.records.map((r: any) => {
+            const isReceived = r.to === publicKey;
+            let assetStr = "XLM";
+            if (r.asset_type !== "native") {
+               assetStr = r.asset_code || "TOKEN";
+            }
+            return {
+              id: r.id,
+              type: isReceived ? "received" : "sent",
+              amount: r.amount || "0",
+              asset: assetStr,
+              from: r.from ? `${r.from.slice(0, 4)}...${r.from.slice(-4)}` : "Unknown",
+              to: r.to ? `${r.to.slice(0, 4)}...${r.to.slice(-4)}` : "Unknown",
+              date: new Date(r.created_at).toISOString().split('T')[0],
+              status: "SUCCESS"
+            };
+          });
+          setTransactions(formatted);
+        } catch(e) {
+          console.error(e);
+        }
+      };
+      fetchTxs();
+    } else {
+      setTransactions([]);
+    }
+  }, [isConnected, publicKey]);
 
   const handleSend = async () => {
     if (!recipient || !amount) return;
+    if (!isConnected || !publicKey) {
+      alert("Please connect your wallet first.");
+      return;
+    }
+    
     setSending(true);
-    await new Promise((r) => setTimeout(r, 2000));
-    setSending(false);
-    setSent(true);
-    setTimeout(() => setSent(false), 4000);
-    setRecipient("");
-    setAmount("");
-    setMemo("");
+
+    try {
+      const StellarSdk = await import("@stellar/stellar-sdk");
+      const { signTransaction } = await import("@stellar/freighter-api");
+      
+      const server = new StellarSdk.Horizon.Server("https://horizon-testnet.stellar.org");
+      const sourceAccount = await server.loadAccount(publicKey);
+      
+      const stellarAsset = asset === "XLM" 
+        ? StellarSdk.Asset.native() 
+        : new StellarSdk.Asset(asset, MOCK_ISSUER_PUBKEY);
+      
+      const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
+        fee: StellarSdk.BASE_FEE,
+        networkPassphrase: StellarSdk.Networks.TESTNET,
+      })
+        .addOperation(StellarSdk.Operation.payment({
+          destination: recipient,
+          asset: stellarAsset,
+          amount: amount,
+        }))
+        .setTimeout(180)
+          .build();
+          
+        const xdr = transaction.toXDR();
+        const signedResponse = await signTransaction(xdr, { networkPassphrase: StellarSdk.Networks.TESTNET });
+        
+        if (signedResponse.error) {
+          throw new Error(signedResponse.error.toString());
+        }
+        
+        const txToSubmit = StellarSdk.TransactionBuilder.fromXDR(
+          signedResponse.signedTxXdr,
+          StellarSdk.Networks.TESTNET
+        ) as StellarSdk.Transaction;
+        
+        await server.submitTransaction(txToSubmit);
+        
+        setSending(false);
+        setSent(true);
+        setTimeout(() => {
+          setSent(false);
+          setAmount("");
+          setRecipient("");
+          setMemo("");
+        }, 3000);
+    } catch (err: any) {
+      console.error(err);
+      alert("Transaction failed: " + (err.message || err.toString()));
+      setSending(false);
+    }
   };
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
@@ -170,9 +260,13 @@ export default function PaymentPage() {
                 {/* RECEIVE TAB */}
                 {tab === "receive" && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center space-y-5">
-                    <div className="inline-flex flex-col items-center justify-center w-48 h-48 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 mx-auto">
-                      <QrCode className="w-20 h-20 text-slate-300 mb-2" />
-                      <span className="text-xs text-slate-400">QR Code</span>
+                    <div className="inline-flex flex-col items-center justify-center p-4 bg-white rounded-2xl border border-slate-200 shadow-sm mx-auto">
+                      {publicKey ? (
+                        <QRCodeSVG value={publicKey} size={180} />
+                      ) : (
+                        <QrCode className="w-20 h-20 text-slate-300 mb-2" />
+                      )}
+                      <span className="text-xs text-slate-400 mt-3">Account Address QR</span>
                     </div>
                     <p className="text-sm text-slate-500">Share your address to receive payments</p>
                     <div className="p-3 rounded-xl bg-slate-50 font-mono text-xs text-slate-600 break-all border border-slate-200">
@@ -187,20 +281,60 @@ export default function PaymentPage() {
                 {/* REQUEST TAB */}
                 {tab === "request" && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
-                    <div>
-                      <Label className="text-sm font-semibold text-slate-600 mb-2 block">Request Amount</Label>
-                      <div className="relative">
-                        <Input type="number" placeholder="0.00" className="bg-white/70 border-slate-200 rounded-xl h-11 pr-16 text-lg font-bold" />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">USDC</span>
+                    {requestGenerated ? (
+                      <div className="text-center space-y-4">
+                        <div className="inline-flex flex-col items-center justify-center p-6 bg-white rounded-2xl border border-slate-200 shadow-sm mx-auto">
+                          <QRCodeSVG
+                            value={`web+stellar:pay?destination=${publicKey || ""}&amount=${amount}&assetCode=${asset}&memo=${encodeURIComponent(memo)}`}
+                            size={200}
+                          />
+                          <div className="text-xl font-extrabold text-slate-800 mt-4">Scan to Pay</div>
+                          <div className="text-sm text-slate-500 mt-1">Requesting {amount} {asset}</div>
+                        </div>
+                        <Button variant="outline" onClick={() => setRequestGenerated(false)} className="rounded-xl w-full">
+                          Create New Request
+                        </Button>
                       </div>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-semibold text-slate-600 mb-2 block">Note</Label>
-                      <Input placeholder="Invoice #001 - Design Services" className="bg-white/70 border-slate-200 rounded-xl h-11" />
-                    </div>
-                    <Button className="w-full h-12 rounded-xl font-bold bg-gradient-to-r from-primary to-blue-500 text-white">
-                      <QrCode className="w-4 h-4 mr-2" /> Generate Payment Request
-                    </Button>
+                    ) : (
+                      <>
+                        <div>
+                          <Label className="text-sm font-semibold text-slate-600 mb-2 block">Asset</Label>
+                          <div className="flex gap-2 mb-4">
+                            {assetOptions.map((a) => (
+                              <button
+                                key={a}
+                                onClick={() => setAsset(a)}
+                                className={`flex-1 py-2.5 rounded-xl text-sm font-bold border-2 transition-all duration-200 ${
+                                  asset === a
+                                    ? "border-primary bg-primary/5 text-primary"
+                                    : "border-slate-200 text-slate-500 hover:border-primary/40"
+                                }`}
+                              >
+                                {a}
+                              </button>
+                            ))}
+                          </div>
+                          <Label className="text-sm font-semibold text-slate-600 mb-2 block">Request Amount</Label>
+                          <div className="relative">
+                            <Input type="number" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} className="bg-white/70 border-slate-200 rounded-xl h-11 pr-16 text-lg font-bold" />
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">{asset}</span>
+                          </div>
+                        </div>
+                        <div>
+                          <Label className="text-sm font-semibold text-slate-600 mb-2 block">Note (Memo)</Label>
+                          <Input placeholder="Invoice #001 - Design Services" value={memo} onChange={e => setMemo(e.target.value)} className="bg-white/70 border-slate-200 rounded-xl h-11" />
+                        </div>
+                        <Button onClick={() => {
+                          if (!publicKey) {
+                            alert("Please connect wallet first!");
+                            return;
+                          }
+                          setRequestGenerated(true);
+                        }} className="w-full h-12 rounded-xl font-bold bg-gradient-to-r from-primary to-blue-500 text-white">
+                          <QrCode className="w-4 h-4 mr-2" /> Generate Payment Request
+                        </Button>
+                      </>
+                    )}
                   </motion.div>
                 )}
               </CardContent>
@@ -209,32 +343,39 @@ export default function PaymentPage() {
 
           {/* Recent Transactions Sidebar */}
           <div>
-            <Card className="glass-panel border-0 shadow-sm">
-              <CardHeader className="px-5 py-4 pb-2">
-                <CardTitle className="text-sm font-bold text-slate-700">Recent Payments</CardTitle>
+            <Card className="bg-white/50 backdrop-blur-md border-white/50 shadow-xl shadow-slate-200/50 hidden md:block">
+              <CardHeader className="pb-3 border-b border-slate-100">
+                <CardTitle className="text-base font-bold text-slate-700">Recent Payments</CardTitle>
               </CardHeader>
-              <CardContent className="px-5 pb-5">
-                <div className="space-y-2">
-                  {MOCK_TRANSACTIONS.slice(0, 4).map((tx, i) => (
-                    <div key={tx.id} className="flex items-center gap-2 p-2.5 rounded-xl hover:bg-slate-50">
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                        tx.type === "received" ? "bg-green-100" : "bg-red-50"
+              <CardContent className="p-4 space-y-4 max-h-[500px] overflow-y-auto">
+                {transactions.length > 0 ? transactions.map((tx, i) => (
+                  <motion.div
+                    key={tx.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.05 }}
+                    className="flex justify-between items-center p-3 rounded-xl hover:bg-white transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                        tx.type === "sent" ? "bg-red-50 text-red-500" : "bg-green-50 text-green-500"
                       }`}>
-                        {tx.type === "received"
-                          ? <ArrowDownLeft className="w-4 h-4 text-green-600" />
-                          : <Send className="w-4 h-4 text-red-400" />
-                        }
+                        {tx.type === "sent" ? <Send className="w-4 h-4" /> : <ArrowDownLeft className="w-5 h-5" />}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-semibold capitalize text-slate-700">{tx.type}</div>
+                      <div>
+                        <div className="text-sm font-semibold text-slate-800 capitalize">{tx.type}</div>
                         <div className="text-xs text-slate-400">{tx.date}</div>
                       </div>
-                      <div className={`text-xs font-bold ${tx.type === "received" ? "text-green-600" : "text-slate-700"}`}>
-                        {tx.type === "received" ? "+" : "-"}{tx.amount} {tx.asset}
-                      </div>
                     </div>
-                  ))}
-                </div>
+                    <div className={`text-sm font-bold ${tx.type === "sent" ? "text-slate-800" : "text-green-600"}`}>
+                      {tx.type === "sent" ? "-" : "+"}{tx.amount} {tx.asset}
+                    </div>
+                  </motion.div>
+                )) : (
+                  <div className="text-center py-8 text-sm text-slate-400">
+                    No recent payments found.
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>

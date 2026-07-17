@@ -28,12 +28,12 @@ pub struct CommunityContract;
 impl CommunityContract {
     pub fn create_fund(
         env: Env,
+        fund_id: String,
         name: String,
         admin: Address,
         token: Address,
-    ) -> Symbol {
+    ) {
         admin.require_auth();
-        let fund_key = Symbol::new(&env, "FUND");
         let fund = CommunityFund {
             name,
             admin,
@@ -41,22 +41,21 @@ impl CommunityContract {
             balance: 0,
             total_votes: 0,
         };
-        env.storage().instance().set(&fund_key, &fund);
-        fund_key
+        env.storage().instance().set(&fund_id, &fund);
     }
 
-    pub fn deposit(env: Env, fund_key: Symbol, depositor: Address, amount: i128) {
+    pub fn deposit(env: Env, fund_id: String, depositor: Address, amount: i128) {
         depositor.require_auth();
-        let mut fund: CommunityFund = env.storage().instance().get(&fund_key).unwrap();
+        let mut fund: CommunityFund = env.storage().instance().get(&fund_id).unwrap();
 
         let token_client = token::Client::new(&env, &fund.token);
         token_client.transfer(&depositor, &env.current_contract_address(), &amount);
 
         fund.balance += amount;
-        env.storage().instance().set(&fund_key, &fund);
+        env.storage().instance().set(&fund_id, &fund);
     }
 
-    pub fn vote(env: Env, fund_key: Symbol, proposal_key: Symbol, voter: Address, in_favor: bool) {
+    pub fn vote(env: Env, fund_id: String, proposal_key: Symbol, voter: Address, in_favor: bool) {
         voter.require_auth();
         let mut proposal: Proposal = env.storage().instance().get(&proposal_key).unwrap();
 
@@ -69,8 +68,8 @@ impl CommunityContract {
         env.storage().instance().set(&proposal_key, &proposal);
     }
 
-    pub fn withdraw(env: Env, fund_key: Symbol, proposal_key: Symbol) {
-        let mut fund: CommunityFund = env.storage().instance().get(&fund_key).unwrap();
+    pub fn withdraw(env: Env, fund_id: String, proposal_key: Symbol) {
+        let mut fund: CommunityFund = env.storage().instance().get(&fund_id).unwrap();
         fund.admin.require_auth();
 
         let mut proposal: Proposal = env.storage().instance().get(&proposal_key).unwrap();
@@ -88,7 +87,7 @@ impl CommunityContract {
         fund.balance -= proposal.amount;
         proposal.executed = true;
 
-        env.storage().instance().set(&fund_key, &fund);
+        env.storage().instance().set(&fund_id, &fund);
         env.storage().instance().set(&proposal_key, &proposal);
     }
 }

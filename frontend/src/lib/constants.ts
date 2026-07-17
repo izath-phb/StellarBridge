@@ -22,6 +22,9 @@ export const ASSETS = {
   },
 };
 
+export const MOCK_ISSUER_PUBKEY = "GA7T4LN4USEO7W5FPEOOPVXYNTNC6DA7MGT5XZIT2FMFAMLRZ6EEMTZK";
+export const MOCK_ISSUER_SECRET = "SBSM5TGKHZ6AXAISSEE5U4GUBG2QW7ZNHREM6Y37D6DDHX7Q3Q3AEMKO";
+
 export const MOCK_TRANSACTIONS = [
   { id: "1", type: "received", amount: "200", asset: "USDC", from: "GXXX...1234", to: "You", date: "2026-07-13", status: "SUCCESS", hash: "abc123def" },
   { id: "2", type: "sent", amount: "50", asset: "USDC", from: "You", to: "GYYY...5678", date: "2026-07-12", status: "SUCCESS", hash: "def456abc" },

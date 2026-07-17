@@ -9,6 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MOCK_ESCROWS } from "@/lib/constants";
 import { useWallet } from "@/lib/wallet-context";
+import { submitSorobanTransaction, readSorobanContract, ESCROW_CONTRACT_ID, XLM_CONTRACT_ID } from "@/lib/soroban";
+import * as StellarSdk from "@stellar/stellar-sdk";
+import { useEffect, useCallback } from "react";
 
 const statusConfig: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
   CREATED:  { color: "bg-slate-100 text-slate-600",   icon: <Clock className="w-3.5 h-3.5" />,        label: "Created" },
@@ -19,19 +22,140 @@ const statusConfig: Record<string, { color: string; icon: React.ReactNode; label
 };
 
 export default function EscrowPage() {
-  const { isConnected, connect } = useWallet();
+  const { isConnected, connect, publicKey } = useWallet();
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState(false);
   const [form, setForm] = useState({ title: "", freelancer: "", amount: "", asset: "USDC" });
+  const [escrows, setEscrows] = useState<any[]>([]);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+
+  // Load from local storage
+  useEffect(() => {
+    const saved = localStorage.getItem("sb_escrows");
+    if (saved) {
+      try {
+        setEscrows(JSON.parse(saved));
+      } catch(e) {}
+    } else {
+      setEscrows(MOCK_ESCROWS); // Initial placeholder
+    }
+  }, []);
+
+  // Save to local storage whenever it changes (only if it has data beyond the mock)
+  useEffect(() => {
+    if (escrows !== MOCK_ESCROWS) {
+      localStorage.setItem("sb_escrows", JSON.stringify(escrows));
+    }
+  }, [escrows]);
+
+  // Fetch live on-chain status
+  const fetchLiveStatus = useCallback(async () => {
+    if (!publicKey || escrows.length === 0) return;
+    
+    let updated = false;
+    const newEscrows = await Promise.all(escrows.map(async (e) => {
+      if (e.asset === "XLM" && !e.id.startsWith("ESC-")) { // ESC- is mock format, ours is ESC_
+        try {
+          const args = [StellarSdk.nativeToScVal(e.id, { type: 'symbol' })];
+          const res = await readSorobanContract(publicKey, ESCROW_CONTRACT_ID, "get_escrow_status", args);
+          if (!res) return e;
+          const statusNative = StellarSdk.scValToNative(res);
+          let realStatus = "CREATED";
+          
+          if (Array.isArray(statusNative)) {
+            realStatus = statusNative[0]?.toString().toUpperCase() || "CREATED";
+          } else if (typeof statusNative === 'string') {
+            realStatus = statusNative.toUpperCase();
+          } else if (statusNative?.toString) {
+            realStatus = statusNative.toString().toUpperCase();
+          }
+
+          if (e.status !== realStatus) {
+            updated = true;
+            return { ...e, status: realStatus };
+          }
+        } catch(err) {
+          console.error(`Failed to fetch status for ${e.id}`, err);
+        }
+      }
+      return e;
+    }));
+
+    if (updated) {
+      setEscrows(newEscrows);
+    }
+  }, [publicKey, escrows]);
+
+  useEffect(() => {
+    fetchLiveStatus();
+    const interval = setInterval(fetchLiveStatus, 15000);
+    return () => clearInterval(interval);
+  }, [fetchLiveStatus]);
 
   const handleCreate = async () => {
+    if (!publicKey) return;
     setCreating(true);
-    await new Promise((r) => setTimeout(r, 2200));
-    setCreating(false);
-    setCreated(true);
-    setShowCreate(false);
-    setTimeout(() => setCreated(false), 4000);
+    try {
+      const uniqueId = "ESC_" + Math.random().toString(36).substring(2, 9).toUpperCase();
+      
+      if (form.asset !== "XLM") {
+        alert("For this demo, only XLM is supported for on-chain Escrow. Other assets will be simulated.");
+        await new Promise((r) => setTimeout(r, 2000));
+      } else {
+        const args = [
+          StellarSdk.nativeToScVal(uniqueId, { type: 'symbol' }),
+          new StellarSdk.Address(publicKey).toScVal(),
+          new StellarSdk.Address(form.freelancer).toScVal(),
+          new StellarSdk.Address(XLM_CONTRACT_ID).toScVal(),
+          StellarSdk.nativeToScVal(Math.floor(Number(form.amount) * 10000000), { type: 'i128' }),
+        ];
+        await submitSorobanTransaction(publicKey, ESCROW_CONTRACT_ID, "create_escrow", args);
+      }
+      
+      const newEscrow = {
+        id: uniqueId,
+        title: form.title,
+        client: publicKey.substring(0,4)+"..."+publicKey.substring(publicKey.length-4),
+        freelancer: form.freelancer.substring(0,4)+"..."+form.freelancer.substring(form.freelancer.length-4),
+        amount: form.amount,
+        asset: form.asset,
+        status: "CREATED",
+        createdAt: new Date().toISOString().split("T")[0]
+      };
+      
+      setEscrows(prev => [newEscrow, ...prev]);
+      
+      setCreated(true);
+      setShowCreate(false);
+      setTimeout(() => setCreated(false), 4000);
+    } catch (err: any) {
+      console.error(err);
+      alert("Failed to create escrow: " + (err.message || err.toString()));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleAction = async (escrowId: string, action: string, newStatus: string) => {
+    if (!publicKey) return;
+    setProcessingId(escrowId);
+    try {
+      const escrow = escrows.find(e => e.id === escrowId);
+      if (escrow?.asset === "XLM" && !escrow.id.startsWith("ESC-")) {
+         const args = [StellarSdk.nativeToScVal(escrow.id, { type: 'symbol' })];
+         await submitSorobanTransaction(publicKey, ESCROW_CONTRACT_ID, action, args);
+      } else {
+         await new Promise(r => setTimeout(r, 1500));
+      }
+      
+      setEscrows(prev => prev.map(e => e.id === escrowId ? { ...e, status: newStatus } : e));
+    } catch (err: any) {
+      console.error(err);
+      alert("Action failed: " + (err.message || err.toString()));
+    } finally {
+      setProcessingId(null);
+    }
   };
 
   return (
@@ -154,8 +278,8 @@ export default function EscrowPage() {
 
         {/* Escrow List */}
         <div className="space-y-4">
-          {MOCK_ESCROWS.map((escrow, i) => {
-            const sc = statusConfig[escrow.status];
+          {escrows.map((escrow, i) => {
+            const sc = statusConfig[escrow.status] || { color: "bg-slate-100", icon: <Clock className="w-3.5 h-3.5" />, label: escrow.status };
             return (
               <motion.div key={escrow.id} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
                 <Card className="glass-panel border-0 shadow-sm hover:shadow-md transition-shadow">
@@ -182,20 +306,27 @@ export default function EscrowPage() {
                     </div>
 
                     {/* Action Buttons */}
+                    {escrow.status === "CREATED" && (
+                      <div className="mt-4 flex gap-2 border-t border-slate-100 pt-4">
+                        <Button onClick={() => handleAction(escrow.id, "deposit_payment", "FUNDED")} disabled={processingId === escrow.id} size="sm" className="rounded-full text-xs bg-amber-500 hover:bg-amber-600 text-white shadow-sm">
+                          {processingId === escrow.id ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null} Deposit Payment
+                        </Button>
+                      </div>
+                    )}
                     {escrow.status === "FUNDED" && (
                       <div className="mt-4 flex gap-2 border-t border-slate-100 pt-4">
-                        <Button variant="outline" size="sm" className="rounded-full text-xs border-green-200 text-green-700 hover:bg-green-50">
-                          <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Approve Release
+                        <Button onClick={() => handleAction(escrow.id, "approve_release", "APPROVED")} disabled={processingId === escrow.id} variant="outline" size="sm" className="rounded-full text-xs border-green-200 text-green-700 hover:bg-green-50">
+                          {processingId === escrow.id ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5 mr-1" />} Approve Release
                         </Button>
-                        <Button variant="outline" size="sm" className="rounded-full text-xs border-red-200 text-red-600 hover:bg-red-50">
+                        <Button onClick={() => handleAction(escrow.id, "refund_payment", "REFUNDED")} disabled={processingId === escrow.id} variant="outline" size="sm" className="rounded-full text-xs border-red-200 text-red-600 hover:bg-red-50">
                           Refund
                         </Button>
                       </div>
                     )}
                     {escrow.status === "APPROVED" && (
                       <div className="mt-4 flex gap-2 border-t border-slate-100 pt-4">
-                        <Button size="sm" className="rounded-full text-xs bg-gradient-to-r from-primary to-blue-500 text-white shadow-sm">
-                          Release Payment
+                        <Button onClick={() => handleAction(escrow.id, "release_payment", "RELEASED")} disabled={processingId === escrow.id} size="sm" className="rounded-full text-xs bg-gradient-to-r from-primary to-blue-500 text-white shadow-sm">
+                          {processingId === escrow.id ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null} Release Payment
                         </Button>
                       </div>
                     )}

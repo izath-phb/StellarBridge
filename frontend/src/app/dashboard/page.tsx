@@ -5,8 +5,9 @@ import { ArrowUpRight, ArrowDownLeft, Clock, TrendingUp, Wallet2, Send, ReceiptT
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/lib/wallet-context";
-import { ASSETS, MOCK_TRANSACTIONS } from "@/lib/constants";
+import { ASSETS } from "@/lib/constants";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 const quickActions = [
   { icon: <Send className="w-5 h-5" />, label: "Send", href: "/payment", color: "bg-indigo-100 text-indigo-600" },
@@ -23,7 +24,59 @@ const assetColors: Record<string, { bg: string; text: string; border: string; gr
 };
 
 export default function DashboardPage() {
-  const { isConnected, publicKey, balances, connect } = useWallet();
+  const { isConnected, publicKey, balances, connect, needsTrustline, setupTrustlines, isLoading, transactions } = useWallet();
+  const [aiInsight, setAiInsight] = useState("Connect your wallet to receive personalized AI insights.");
+
+  const recentTxs = transactions.slice(0, 5);
+
+  const txCount = isConnected ? transactions.length : 0;
+  const score = isConnected ? Math.min(100, 50 + (txCount * 2)) : 0; // Starts at 50, +2 per tx
+  const scoreLabel = score >= 90 ? "Excellent — Top 2% of users" : score >= 70 ? "Good — Top 25% of users" : score > 0 ? "Fair — Growing Profile" : "No Activity";
+
+  useEffect(() => {
+    if (!isConnected) {
+      setAiInsight("Connect your wallet to receive personalized AI insights.");
+    }
+  }, [isConnected]);
+
+  // AI Insight Generator
+  useEffect(() => {
+    if (!isConnected) return;
+    
+    setAiInsight("Analyzing your recent on-chain activity...");
+    
+    const timer = setTimeout(() => {
+      if (transactions.length === 0) {
+        setAiInsight("Ready to make your first transaction? Send XLM or USDC seamlessly with StellarBridge's borderless network.");
+        return;
+      }
+      
+      let receivedCount = 0;
+      let sentCount = 0;
+      let totalReceived = 0;
+      let lastAsset = "XLM";
+      
+      transactions.forEach(tx => {
+        if (tx.type === "received") {
+          receivedCount++;
+          totalReceived += parseFloat(tx.amount || "0");
+          lastAsset = tx.asset;
+        } else {
+          sentCount++;
+        }
+      });
+      
+      if (receivedCount > 0 && sentCount === 0) {
+        setAiInsight(`You've received ${receivedCount} payments recently totaling ~${totalReceived.toFixed(2)} ${lastAsset}. Stellar's 5-second finality means your funds are already settled and ready to use.`);
+      } else if (sentCount > 0) {
+        setAiInsight(`You've completed ${sentCount} outbound transfers recently. By using StellarBridge, you saved an estimated $${(sentCount * 15).toFixed(2)} compared to traditional bank wire fees!`);
+      } else {
+        setAiInsight("Your financial activity is steady. Did you know you can participate in global governance by depositing into the Community DAO?");
+      }
+    }, 1500);
+    
+    return () => clearTimeout(timer);
+  }, [isConnected, transactions]);
 
   const shortKey = publicKey ? `${publicKey.slice(0, 12)}...${publicKey.slice(-6)}` : "";
 
@@ -50,6 +103,18 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+        
+        {needsTrustline && (
+          <div className="mb-8 p-4 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div>
+              <h3 className="font-bold text-amber-800">Action Required: Initialize Custom Assets</h3>
+              <p className="text-sm text-amber-700">You need to establish trustlines to receive USDC and EURC on the Stellar network.</p>
+            </div>
+            <Button onClick={setupTrustlines} disabled={isLoading} className="shrink-0 bg-amber-500 hover:bg-amber-600 text-white rounded-xl">
+              {isLoading ? "Setting up..." : "Setup Trustlines & Get Faucet"}
+            </Button>
+          </div>
+        )}
 
         {/* Balance Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-8">
@@ -111,9 +176,9 @@ export default function DashboardPage() {
                 <CardTitle className="text-base font-bold text-slate-700">Recent Transactions</CardTitle>
                 <Link href="/wallet" className="text-xs text-primary hover:underline font-medium">View all</Link>
               </CardHeader>
-              <CardContent className="px-6 pb-5">
+              <CardContent className="p-4">
                 <div className="space-y-3">
-                  {MOCK_TRANSACTIONS.map((tx, i) => (
+                  {recentTxs.length > 0 ? recentTxs.map((tx, i) => (
                     <motion.div
                       key={tx.id}
                       initial={{ opacity: 0, x: -10 }}
@@ -122,12 +187,10 @@ export default function DashboardPage() {
                       className="flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 transition-colors"
                     >
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                        tx.type === "received" ? "bg-green-100" : tx.type === "escrow" ? "bg-violet-100" : "bg-red-100"
+                        tx.type === "received" ? "bg-green-100" : "bg-red-100"
                       }`}>
                         {tx.type === "received" ? (
                           <ArrowDownLeft className="w-5 h-5 text-green-600" />
-                        ) : tx.type === "escrow" ? (
-                          <ShieldCheck className="w-5 h-5 text-violet-600" />
                         ) : (
                           <ArrowUpRight className="w-5 h-5 text-red-500" />
                         )}
@@ -148,7 +211,11 @@ export default function DashboardPage() {
                         {tx.status}
                       </div>
                     </motion.div>
-                  ))}
+                  )) : (
+                    <div className="text-center py-8 text-sm text-slate-400">
+                      No recent transactions found on the network.
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -165,7 +232,17 @@ export default function DashboardPage() {
                   <span className="text-sm font-bold text-slate-700">AI Insight</span>
                 </div>
                 <p className="text-sm text-slate-600 leading-relaxed italic">
-                  "Your international transaction fees decreased <strong className="text-green-600">40%</strong> after switching to StellarBridge compared to traditional payment rails."
+                  {aiInsight.includes("Analyzing") || aiInsight.includes("Connect") ? (
+                     <span className="text-slate-400">{aiInsight}</span>
+                  ) : (
+                     <span dangerouslySetInnerHTML={{ 
+                       __html: `"${aiInsight.replace(/(\$\d+\.\d+)/g, '<strong class="text-green-600">$1</strong>')
+                         .replace(/(~\d+\.\d+ \w+)/g, '<strong class="text-green-600">$1</strong>')
+                         .replace(/(\d+ outbound transfers)/g, '<strong class="text-primary">$1</strong>')
+                         .replace(/(\d+ payments)/g, '<strong class="text-primary">$1</strong>')
+                       }"` 
+                     }} />
+                  )}
                 </p>
               </CardContent>
             </Card>
@@ -196,20 +273,20 @@ export default function DashboardPage() {
             <Card className="glass-panel border-0 shadow-sm">
               <CardContent className="pt-5 pb-5 px-5">
                 <div className="text-sm font-bold text-slate-700 mb-1">StellarBridge Score</div>
-                <div className="text-xs text-slate-400 mb-4">Based on 300 on-chain transactions</div>
+                <div className="text-xs text-slate-400 mb-4">Based on {txCount} on-chain transactions</div>
                 <div className="flex items-end gap-2 mb-3">
-                  <div className="text-4xl font-extrabold text-primary">98</div>
+                  <div className="text-4xl font-extrabold text-primary">{score}</div>
                   <div className="text-sm text-slate-500 mb-1">/ 100</div>
                 </div>
                 <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
                   <motion.div
                     initial={{ width: 0 }}
-                    animate={{ width: "98%" }}
+                    animate={{ width: `${score}%` }}
                     transition={{ duration: 1, delay: 0.5 }}
                     className="h-full rounded-full bg-gradient-to-r from-primary to-blue-400"
                   />
                 </div>
-                <div className="text-xs text-green-600 font-semibold mt-2">Excellent — Top 2% of users</div>
+                <div className="text-xs text-green-600 font-semibold mt-2">{scoreLabel}</div>
               </CardContent>
             </Card>
           </div>

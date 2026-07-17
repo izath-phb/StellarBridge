@@ -2,22 +2,24 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowUpRight, ArrowDownLeft, Copy, QrCode, ShieldCheck, RefreshCw } from "lucide-react";
+import { QRCodeSVG } from 'qrcode.react';
+import { ArrowUpRight, ArrowDownLeft, Copy, QrCode, ShieldCheck, RefreshCw, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/lib/wallet-context";
-import { MOCK_TRANSACTIONS, ASSETS } from "@/lib/constants";
+import { ASSETS } from "@/lib/constants";
 
 const tabList = ["All", "Received", "Sent", "Escrow"];
 
 export default function WalletPage() {
-  const { isConnected, publicKey, balances, connect } = useWallet();
+  const { isConnected, publicKey, balances, connect, transactions } = useWallet();
   const [activeTab, setActiveTab] = useState("All");
   const [copied, setCopied] = useState(false);
+  const [showQR, setShowQR] = useState(false);
 
   const shortKey = publicKey ?? "Not Connected";
 
-  const filtered = MOCK_TRANSACTIONS.filter((tx) => {
+  const filtered = transactions.filter((tx) => {
     if (activeTab === "All") return true;
     return tx.type === activeTab.toLowerCase();
   });
@@ -54,7 +56,7 @@ export default function WalletPage() {
                   <Copy className="w-3.5 h-3.5 mr-1.5" />
                   {copied ? "Copied!" : "Copy"}
                 </Button>
-                <Button variant="outline" size="sm" className="rounded-full text-xs">
+                <Button variant="outline" size="sm" className="rounded-full text-xs" onClick={() => setShowQR(true)} disabled={!publicKey}>
                   <QrCode className="w-3.5 h-3.5 mr-1.5" /> QR Code
                 </Button>
                 {!isConnected && (
@@ -162,6 +164,39 @@ export default function WalletPage() {
           </CardContent>
         </Card>
       </motion.div>
+
+      {/* QR Code Modal */}
+      {showQR && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowQR(false)}>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.2 }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-2xl flex flex-col items-center gap-6 relative border border-slate-100 dark:border-slate-800"
+          >
+            <button 
+              onClick={() => setShowQR(false)}
+              className="absolute top-5 right-5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors bg-slate-100 dark:bg-slate-800 p-1.5 rounded-full"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="text-center space-y-1">
+              <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Wallet Address</h2>
+              <p className="text-sm text-slate-500">Scan to send assets to this wallet</p>
+            </div>
+            
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+              <QRCodeSVG value={publicKey || ""} size={220} />
+            </div>
+            
+            <div className="text-center max-w-[280px]">
+              <p className="text-xs text-slate-500 font-mono break-all bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800">{publicKey}</p>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

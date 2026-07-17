@@ -1,11 +1,25 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
+import type * as StellarSdk from "@stellar/stellar-sdk";
+import { MOCK_ISSUER_PUBKEY, MOCK_ISSUER_SECRET } from "./constants";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Wallet } from "lucide-react";
 import { isConnected as checkFreighter, getAddress as getFreighterKey, requestAccess } from "@stellar/freighter-api";
 
 import albedo from "@albedo-link/intent";
+
+export interface Transaction {
+  id: string;
+  type: string;
+  amount: string;
+  asset: string;
+  from: string;
+  to: string;
+  date: string;
+  status: string;
+  hash: string;
+}
 
 interface WalletContextType {
   isConnected: boolean;
@@ -17,8 +31,11 @@ interface WalletContextType {
   };
   connect: () => void;
   disconnect: () => void;
+  setupTrustlines: () => Promise<void>;
+  needsTrustline: boolean;
   isLoading: boolean;
   error: string | null;
+  transactions: Transaction[];
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -29,8 +46,139 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [balances, setBalances] = useState({ XLM: "0.00", USDC: "0.00", EURC: "0.00" });
+  const [needsTrustline, setNeedsTrustline] = useState(false);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
 
-  const mockBalances = { XLM: "250.00", USDC: "1,500.00", EURC: "500.00" };
+  useEffect(() => {
+    if (isConnected && publicKey) {
+      const fetchBalances = async () => {
+        try {
+          const StellarSdk = await import("@stellar/stellar-sdk");
+          const server = new StellarSdk.Horizon.Server("https://horizon-testnet.stellar.org");
+          const account = await server.loadAccount(publicKey);
+          
+          let xlmBalance = "0.00";
+          let usdcBalance = "0.00";
+          let eurcBalance = "0.00";
+          
+          let hasUsdc = false;
+          let hasEurc = false;
+          
+          account.balances.forEach((b: any) => {
+            if (b.asset_type === "native") {
+              xlmBalance = parseFloat(b.balance).toFixed(2);
+            } else if (b.asset_code === "USDC" && b.asset_issuer === MOCK_ISSUER_PUBKEY) {
+              hasUsdc = true;
+              usdcBalance = parseFloat(b.balance).toFixed(2);
+            } else if (b.asset_code === "EURC" && b.asset_issuer === MOCK_ISSUER_PUBKEY) {
+              hasEurc = true;
+              eurcBalance = parseFloat(b.balance).toFixed(2);
+            }
+          });
+          
+          setNeedsTrustline(!hasUsdc || !hasEurc);
+          setBalances({ XLM: xlmBalance, USDC: usdcBalance, EURC: eurcBalance });
+
+          // Fetch transactions (payments)
+          const payments = await server.payments().forAccount(publicKey).order("desc").limit(50).call();
+          const parsedTxs: Transaction[] = payments.records
+            .filter((p: any) => p.type === "payment" || p.type === "create_account")
+            .map((p: any) => {
+              const isReceived = p.type === "payment" ? p.to === publicKey : p.account === publicKey;
+              const fromAcc = p.type === "payment" ? p.from : p.funder;
+              const toAcc = p.type === "payment" ? p.to : p.account;
+              const amount = p.type === "payment" ? p.amount : p.starting_balance;
+              const asset = p.type === "payment" ? (p.asset_type === "native" ? "XLM" : p.asset_code) : "XLM";
+
+              return {
+                id: p.id,
+                type: isReceived ? "received" : "sent",
+                amount: amount || "0",
+                asset: asset || "Unknown",
+                from: fromAcc === publicKey ? "You" : `${fromAcc.slice(0, 4)}...${fromAcc.slice(-4)}`,
+                to: toAcc === publicKey ? "You" : `${toAcc.slice(0, 4)}...${toAcc.slice(-4)}`,
+                date: new Date(p.created_at).toISOString().split("T")[0],
+                status: p.transaction_successful ? "SUCCESS" : "FAILED",
+                hash: p.transaction_hash.slice(0, 9),
+              };
+            });
+          setTransactions(parsedTxs);
+        } catch (e) {
+          console.error("Error fetching balance/txs:", e);
+          setBalances({ XLM: "0.00", USDC: "0.00", EURC: "0.00" });
+          setTransactions([]);
+        }
+      };
+      fetchBalances();
+      
+      const interval = setInterval(fetchBalances, 10000);
+      return () => clearInterval(interval);
+    } else {
+      setBalances({ XLM: "0.00", USDC: "0.00", EURC: "0.00" });
+      setNeedsTrustline(false);
+      setTransactions([]);
+    }
+  }, [isConnected, publicKey]);
+
+  const setupTrustlines = async () => {
+    if (!publicKey) return;
+    setIsLoading(true);
+    try {
+      const StellarSdk = await import("@stellar/stellar-sdk");
+      const { signTransaction } = await import("@stellar/freighter-api");
+      const server = new StellarSdk.Horizon.Server("https://horizon-testnet.stellar.org");
+      
+      const account = await server.loadAccount(publicKey);
+      const usdcAsset = new StellarSdk.Asset("USDC", MOCK_ISSUER_PUBKEY);
+      const eurcAsset = new StellarSdk.Asset("EURC", MOCK_ISSUER_PUBKEY);
+      
+      const tx = new StellarSdk.TransactionBuilder(account, {
+        fee: StellarSdk.BASE_FEE,
+        networkPassphrase: StellarSdk.Networks.TESTNET,
+      })
+        .addOperation(StellarSdk.Operation.changeTrust({ asset: usdcAsset }))
+        .addOperation(StellarSdk.Operation.changeTrust({ asset: eurcAsset }))
+        .setTimeout(180)
+        .build();
+        
+      const signedRes = await signTransaction(tx.toXDR(), { networkPassphrase: StellarSdk.Networks.TESTNET });
+      if (signedRes.error) throw new Error(signedRes.error);
+      
+      const txToSubmit = StellarSdk.TransactionBuilder.fromXDR(signedRes.signedTxXdr, StellarSdk.Networks.TESTNET) as StellarSdk.Transaction;
+      await server.submitTransaction(txToSubmit);
+      
+      // Auto faucet for demo
+      const issuerKeypair = StellarSdk.Keypair.fromSecret(MOCK_ISSUER_SECRET);
+      const issuerAccount = await server.loadAccount(MOCK_ISSUER_PUBKEY);
+      const faucetTx = new StellarSdk.TransactionBuilder(issuerAccount, {
+        fee: StellarSdk.BASE_FEE,
+        networkPassphrase: StellarSdk.Networks.TESTNET,
+      })
+        .addOperation(StellarSdk.Operation.payment({
+          destination: publicKey,
+          asset: usdcAsset,
+          amount: "1500"
+        }))
+        .addOperation(StellarSdk.Operation.payment({
+          destination: publicKey,
+          asset: eurcAsset,
+          amount: "500"
+        }))
+        .setTimeout(180)
+        .build();
+        
+      faucetTx.sign(issuerKeypair);
+      await server.submitTransaction(faucetTx);
+      
+      alert("Trustlines created and faucet funds received!");
+      setNeedsTrustline(false);
+    } catch (e: any) {
+      alert("Error setting up trustlines: " + e.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const connect = () => {
     setIsModalOpen(true);
@@ -45,17 +193,33 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         const checkRes = await checkFreighter();
         if (checkRes.isConnected) {
           let pkRes = await getFreighterKey();
+          
           if (pkRes.error || !pkRes.address) {
             pkRes = await requestAccess();
           }
+          
+          // In some Freighter versions, setAllowed() might be needed or requestAccess returns error if not allowed
+          if (pkRes.error || !pkRes.address) {
+            const { setAllowed } = await import("@stellar/freighter-api");
+            const allowRes = await setAllowed();
+            if (allowRes.isAllowed) {
+              pkRes = await getFreighterKey();
+            }
+          }
+
           if (pkRes.address) {
             setPublicKey(pkRes.address);
             setIsConnected(true);
             setIsModalOpen(false);
             return;
           }
+          
+          // If we reach here, Freighter IS installed but we couldn't get the address
+          setError(pkRes.error?.toString() || "Failed to get account from Freighter. Please unlock your wallet and approve the connection.");
+          return;
         }
-        // Seamless fallback if Freighter is not installed
+        
+        // Seamless fallback ONLY if Freighter is not installed
         const demoKey = "GDEMO...FREIGHTER" + Math.random().toString(36).substring(7).toUpperCase();
         setPublicKey(demoKey);
         setIsConnected(true);
@@ -105,7 +269,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   ];
 
   return (
-    <WalletContext.Provider value={{ isConnected, publicKey, balances: mockBalances, connect, disconnect, isLoading, error }}>
+    <WalletContext.Provider value={{ isConnected, publicKey, balances, needsTrustline, setupTrustlines, connect, disconnect, isLoading, error, transactions }}>
       {children}
       
       {/* Wallet Selection Modal */}

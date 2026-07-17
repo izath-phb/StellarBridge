@@ -1,27 +1,92 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Store, Plus, QrCode, Star, TrendingUp, Package, Loader2, CheckCircle2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { MOCK_MERCHANTS } from "@/lib/constants";
+import { MOCK_MERCHANTS, MOCK_ISSUER_PUBKEY } from "@/lib/constants";
+import { useWallet } from "@/lib/wallet-context";
+import { submitSorobanTransaction, PAYMENT_CONTRACT_ID, XLM_CONTRACT_ID } from "@/lib/soroban";
+import * as StellarSdk from "@stellar/stellar-sdk";
 
 export default function MerchantPage() {
+  const { isConnected, publicKey, connect } = useWallet();
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState(false);
   const [form, setForm] = useState({ name: "", desc: "", category: "" });
+  const [merchants, setMerchants] = useState<any[]>(MOCK_MERCHANTS);
+  const [buyingId, setBuyingId] = useState<number | null>(null);
+  const [modalView, setModalView] = useState<{type: string, merchant: any} | null>(null);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("merchants");
+    if (saved) {
+      setMerchants(JSON.parse(saved));
+    } else {
+      setMerchants(MOCK_MERCHANTS);
+      localStorage.setItem("merchants", JSON.stringify(MOCK_MERCHANTS));
+    }
+  }, []);
 
   const handleCreate = async () => {
     setCreating(true);
-    await new Promise((r) => setTimeout(r, 1800));
+    await new Promise((r) => setTimeout(r, 1200));
+    
+    const newMerchant = {
+      id: "MERCH-" + Math.floor(Math.random() * 1000),
+      name: form.name,
+      category: form.category,
+      rating: 5.0,
+      revenue: "0",
+      customers: 0,
+      receiverAddress: publicKey // Store the creator's address as the receiver
+    };
+    const newMerchants = [newMerchant, ...merchants];
+    setMerchants(newMerchants);
+    localStorage.setItem("merchants", JSON.stringify(newMerchants));
+    
     setCreating(false);
     setCreated(true);
     setShowCreate(false);
     setTimeout(() => setCreated(false), 4000);
+  };
+
+  const handleBuy = async (index: number, priceStr: string) => {
+    if (!isConnected || !publicKey) {
+      connect();
+      return;
+    }
+    
+    // Extract number and convert to i128 (scaled by 1e7)
+    const amountNum = Number(priceStr.replace(/[^0-9]/g, "")) || 10;
+    const scaledAmount = Math.floor(amountNum * 10000000);
+    
+    const merchant = merchants[index];
+    const receiverAddress = merchant?.receiverAddress || MOCK_ISSUER_PUBKEY; // Fallback for mocks
+    
+    setBuyingId(index);
+    try {
+      const args = [
+        new StellarSdk.Address(publicKey).toScVal(),
+        new StellarSdk.Address(receiverAddress).toScVal(),
+        new StellarSdk.Address(XLM_CONTRACT_ID).toScVal(),
+        StellarSdk.nativeToScVal(scaledAmount, { type: 'i128' }),
+        StellarSdk.nativeToScVal("Merchant Purchase", { type: 'string' })
+      ];
+      
+      await submitSorobanTransaction(publicKey, PAYMENT_CONTRACT_ID, "send_payment", args);
+      
+      alert("Purchase successful! Paid " + amountNum + " XLM via smart contract.");
+    } catch (err: any) {
+      console.error(err);
+      alert("Purchase failed: " + (err.message || err.toString()));
+    } finally {
+      setBuyingId(null);
+    }
   };
 
   return (
@@ -79,7 +144,7 @@ export default function MerchantPage() {
 
         {/* Merchant Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
-          {MOCK_MERCHANTS.map((m, i) => (
+          {merchants.map((m, i) => (
             <motion.div key={m.id} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
               <Card className="glass-panel border-0 shadow-md hover:shadow-xl transition-all duration-300">
                 <CardContent className="p-6">
@@ -108,13 +173,13 @@ export default function MerchantPage() {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" className="flex-1 rounded-xl text-xs">
+                    <Button onClick={() => setModalView({ type: "products", merchant: m })} variant="outline" size="sm" className="flex-1 rounded-xl text-xs">
                       <Package className="w-3.5 h-3.5 mr-1.5" /> Products
                     </Button>
-                    <Button variant="outline" size="sm" className="flex-1 rounded-xl text-xs">
+                    <Button onClick={() => setModalView({ type: "qr", merchant: m })} variant="outline" size="sm" className="flex-1 rounded-xl text-xs">
                       <QrCode className="w-3.5 h-3.5 mr-1.5" /> Payment QR
                     </Button>
-                    <Button size="sm" className="flex-1 rounded-xl text-xs bg-gradient-to-r from-primary to-blue-500 text-white">
+                    <Button onClick={() => setModalView({ type: "analytics", merchant: m })} size="sm" className="flex-1 rounded-xl text-xs bg-gradient-to-r from-primary to-blue-500 text-white">
                       <TrendingUp className="w-3.5 h-3.5 mr-1.5" /> Analytics
                     </Button>
                   </div>
@@ -147,7 +212,9 @@ export default function MerchantPage() {
                     <div className="text-xs text-slate-400 mb-3">{p.merchant}</div>
                     <div className="flex items-center justify-between">
                       <span className="font-extrabold text-foreground">{p.price}</span>
-                      <Button size="sm" className="h-8 rounded-full px-4 text-xs bg-gradient-to-r from-primary to-blue-500 text-white">Buy</Button>
+                      <Button onClick={() => handleBuy(i, p.price)} disabled={buyingId === i} size="sm" className="h-8 rounded-full px-4 text-xs bg-gradient-to-r from-primary to-blue-500 text-white">
+                         {buyingId === i ? <Loader2 className="w-3 h-3 animate-spin" /> : "Buy"}
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -156,6 +223,61 @@ export default function MerchantPage() {
           </div>
         </div>
       </motion.div>
+
+      {/* Modal Overlay */}
+      {modalView && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setModalView(null)}>
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }} 
+            animate={{ opacity: 1, scale: 1 }} 
+            className="bg-white p-6 rounded-2xl max-w-sm w-full shadow-2xl relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="absolute top-4 right-4 cursor-pointer text-slate-400 hover:text-slate-600" onClick={() => setModalView(null)}>✕</div>
+            
+            {modalView.type === "products" && (
+              <div className="text-center">
+                <Package className="w-12 h-12 text-primary mx-auto mb-4 opacity-80" />
+                <h3 className="text-lg font-extrabold text-slate-800 mb-2">{modalView.merchant.name} Products</h3>
+                <p className="text-sm text-slate-500 mb-6">Manage your inventory, set prices in USDC/XLM, and view stock levels directly on-chain.</p>
+                <div className="bg-slate-50 rounded-xl p-4 text-xs font-mono text-slate-400">List is empty. Add a product to begin!</div>
+              </div>
+            )}
+            
+            {modalView.type === "qr" && (
+              <div className="text-center">
+                <QrCode className="w-12 h-12 text-blue-500 mx-auto mb-4 opacity-80" />
+                <h3 className="text-lg font-extrabold text-slate-800 mb-2">Receive Payments</h3>
+                <p className="text-sm text-slate-500 mb-6">Scan this code with a Stellar-compatible wallet (like Lobstr or Freighter) to pay {modalView.merchant.name}.</p>
+                <div className="w-48 h-48 bg-white border-4 border-slate-100 rounded-xl mx-auto flex items-center justify-center shadow-inner">
+                   <QrCode className="w-24 h-24 text-slate-800" />
+                </div>
+                <div className="mt-4 text-[10px] text-slate-400 break-all">{modalView.merchant.receiverAddress || "GBTC2UQK6L3M342W2X5WDKB33FZZF3JQKXOK62G3K3QZ6K63K6K6K6K6"}</div>
+              </div>
+            )}
+            
+            {modalView.type === "analytics" && (
+              <div className="text-center">
+                <TrendingUp className="w-12 h-12 text-emerald-500 mx-auto mb-4 opacity-80" />
+                <h3 className="text-lg font-extrabold text-slate-800 mb-2">Store Analytics</h3>
+                <p className="text-sm text-slate-500 mb-6">Real-time on-chain revenue data and customer demographics.</p>
+                <div className="grid grid-cols-2 gap-3 text-left">
+                   <div className="p-3 bg-emerald-50 rounded-xl">
+                      <div className="text-xs text-emerald-600 font-bold mb-1">Weekly Volume</div>
+                      <div className="text-lg font-extrabold text-slate-800">+12.5%</div>
+                   </div>
+                   <div className="p-3 bg-blue-50 rounded-xl">
+                      <div className="text-xs text-blue-600 font-bold mb-1">Unique Buyers</div>
+                      <div className="text-lg font-extrabold text-slate-800">{modalView.merchant.customers + 4}</div>
+                   </div>
+                </div>
+              </div>
+            )}
+            
+            <Button className="w-full mt-6 rounded-xl bg-slate-900 text-white" onClick={() => setModalView(null)}>Close</Button>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

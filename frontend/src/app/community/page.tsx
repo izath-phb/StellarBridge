@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Users, Vote, Wallet2, Plus, CheckCircle2, Loader2, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,6 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MOCK_COMMUNITIES } from "@/lib/constants";
+import { useWallet } from "@/lib/wallet-context";
+import { submitSorobanTransaction, COMMUNITY_CONTRACT_ID, XLM_CONTRACT_ID } from "@/lib/soroban";
+import * as StellarSdk from "@stellar/stellar-sdk";
 
 const proposals = [
   { id: "PROP-001", title: "Fund APAC Devs Scholarship", community: "APAC Developer Fund", amount: "5000 USDC", votes: { for: 780, against: 120 }, status: "ACTIVE", daysLeft: 3 },
@@ -16,23 +19,93 @@ const proposals = [
 ];
 
 export default function CommunityPage() {
+  const { isConnected, connect, publicKey } = useWallet();
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState(false);
   const [votingId, setVotingId] = useState<string | null>(null);
   const [voted, setVoted] = useState<Set<string>>(new Set());
+  
+  const [form, setForm] = useState({ name: "", initialTreasury: "", mission: "" });
+  const [communities, setCommunities] = useState<any[]>([]);
+  const [depositingTo, setDepositingTo] = useState<string | null>(null);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("communities");
+    if (saved) {
+      // Filter out dummy DAOs, keep only real ones that use XLM
+      const parsed = JSON.parse(saved).filter((c: any) => c.currency === "XLM");
+      setCommunities(parsed);
+      localStorage.setItem("communities", JSON.stringify(parsed));
+    }
+  }, []);
 
   const handleCreate = async () => {
+    if (!publicKey) return;
     setCreating(true);
-    await new Promise((r) => setTimeout(r, 1800));
-    setCreating(false);
-    setCreated(true);
-    setShowCreate(false);
-    setTimeout(() => setCreated(false), 4000);
+    try {
+      const fundId = "DAO-" + Math.floor(Math.random()*10000);
+      const args = [
+        StellarSdk.nativeToScVal(fundId, { type: 'string' }),
+        StellarSdk.nativeToScVal(form.name, { type: 'string' }),
+        new StellarSdk.Address(publicKey).toScVal(),
+        new StellarSdk.Address(XLM_CONTRACT_ID).toScVal(),
+      ];
+      await submitSorobanTransaction(publicKey, COMMUNITY_CONTRACT_ID, "create_fund", args);
+      
+      const newCommunity = {
+        id: fundId,
+        name: form.name,
+        members: 1,
+        treasury: form.initialTreasury || "0",
+        currency: "XLM",
+        proposals: 0,
+      };
+      
+      const newCommunities = [newCommunity, ...communities];
+      setCommunities(newCommunities);
+      localStorage.setItem("communities", JSON.stringify(newCommunities));
+      
+      setCreated(true);
+      setShowCreate(false);
+      setTimeout(() => setCreated(false), 4000);
+    } catch (err: any) {
+      console.error(err);
+      alert("Failed to create DAO: " + (err.message || err.toString()));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleDeposit = async (communityId: string) => {
+    if (!publicKey) return;
+    setDepositingTo(communityId);
+    try {
+      const amount = prompt("Enter amount to deposit (XLM):", "10");
+      if (!amount) return;
+      const args = [
+        StellarSdk.nativeToScVal(communityId, { type: 'string' }),
+        new StellarSdk.Address(publicKey).toScVal(),
+        StellarSdk.nativeToScVal(Math.floor(Number(amount) * 10000000), { type: 'i128' }),
+      ];
+      await submitSorobanTransaction(publicKey, COMMUNITY_CONTRACT_ID, "deposit", args);
+      
+      const newCommunities = communities.map(c => c.id === communityId ? { ...c, treasury: (Number(c.treasury) + Number(amount)).toString() } : c);
+      setCommunities(newCommunities);
+      localStorage.setItem("communities", JSON.stringify(newCommunities));
+      alert("Deposit successful!");
+    } catch (err: any) {
+      console.error(err);
+      alert("Failed to deposit: " + (err.message || err.toString()));
+    } finally {
+      setDepositingTo(null);
+    }
   };
 
   const handleVote = async (id: string, side: "for" | "against") => {
+    if (!isConnected) { connect(); return; }
     setVotingId(id + side);
+    // Simulate vote since proposals aren't dynamically created in the MVP contract yet
     await new Promise((r) => setTimeout(r, 1200));
     setVotingId(null);
     setVoted((prev) => new Set(prev).add(id));
@@ -69,15 +142,15 @@ export default function CommunityPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label className="text-sm font-semibold text-slate-600 mb-2 block">Community Name</Label>
-                    <Input placeholder="e.g., APAC Builder Fund" className="bg-white/70 border-slate-200 rounded-xl h-11" />
+                    <Input placeholder="e.g., APAC Builder Fund" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="bg-white/70 border-slate-200 rounded-xl h-11" />
                   </div>
                   <div>
-                    <Label className="text-sm font-semibold text-slate-600 mb-2 block">Initial Treasury (USDC)</Label>
-                    <Input type="number" placeholder="e.g., 10000" className="bg-white/70 border-slate-200 rounded-xl h-11" />
+                    <Label className="text-sm font-semibold text-slate-600 mb-2 block">Initial Treasury (XLM)</Label>
+                    <Input type="number" placeholder="e.g., 10000" value={form.initialTreasury} onChange={e => setForm({...form, initialTreasury: e.target.value})} className="bg-white/70 border-slate-200 rounded-xl h-11" />
                   </div>
                   <div className="sm:col-span-2">
                     <Label className="text-sm font-semibold text-slate-600 mb-2 block">Mission Statement</Label>
-                    <Input placeholder="Our community's goal is to..." className="bg-white/70 border-slate-200 rounded-xl h-11" />
+                    <Input placeholder="Our community's goal is to..." value={form.mission} onChange={e => setForm({...form, mission: e.target.value})} className="bg-white/70 border-slate-200 rounded-xl h-11" />
                   </div>
                 </div>
                 <div className="p-3 rounded-xl bg-sky-50 border border-sky-100">
@@ -88,8 +161,8 @@ export default function CommunityPage() {
                     ))}
                   </div>
                 </div>
-                <Button onClick={handleCreate} disabled={creating} className="w-full h-12 rounded-xl font-bold bg-gradient-to-r from-primary to-blue-500 text-white shadow-lg shadow-primary/20">
-                  {creating ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Deploying DAO...</> : <><Users className="w-4 h-4 mr-2" /> Create DAO Community</>}
+                <Button onClick={!isConnected ? connect : handleCreate} disabled={creating || (isConnected && (!form.name || !form.initialTreasury))} className="w-full h-12 rounded-xl font-bold bg-gradient-to-r from-primary to-blue-500 text-white shadow-lg shadow-primary/20">
+                  {creating ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Deploying DAO...</> : <><Users className="w-4 h-4 mr-2" /> {isConnected ? "Create DAO Community" : "Connect Wallet"}</>}
                 </Button>
               </CardContent>
             </Card>
@@ -98,7 +171,7 @@ export default function CommunityPage() {
 
         {/* Community Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
-          {MOCK_COMMUNITIES.map((c, i) => (
+          {communities.map((c, i) => (
             <motion.div key={c.id} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
               <Card className="glass-panel border-0 shadow-md hover:shadow-xl transition-all duration-300">
                 <CardContent className="p-6">
@@ -108,17 +181,17 @@ export default function CommunityPage() {
                     </div>
                     <div>
                       <div className="font-bold text-slate-800">{c.name}</div>
-                      <div className="text-xs text-slate-400">{c.members.toLocaleString()} members</div>
+                      <div className="text-xs text-slate-400">{c.members.toLocaleString("en-US")} members</div>
                     </div>
                   </div>
                   <div className="grid grid-cols-3 gap-3 mb-4">
                     <div className="p-3 bg-slate-50 rounded-xl text-center">
-                      <div className="text-lg font-extrabold text-foreground">{c.members.toLocaleString()}</div>
-                      <div className="text-xs text-slate-400">Members</div>
+                      <div className="text-lg font-extrabold text-foreground">{c.members.toLocaleString("en-US")}</div>
+                      <div className="text-xs text-slate-400">Total Members</div>
                     </div>
-                    <div className="p-3 bg-emerald-50 rounded-xl text-center">
-                      <div className="text-lg font-extrabold text-emerald-700">${Number(c.treasury).toLocaleString()}</div>
-                      <div className="text-xs text-slate-400">Treasury</div>
+                    <div className="p-3 bg-emerald-50 rounded-xl text-center col-span-2">
+                      <div className="text-lg font-extrabold text-emerald-700">{Number(c.treasury).toLocaleString("en-US")} <span className="text-xs">{c.currency || "USDC"}</span></div>
+                      <div className="text-xs text-emerald-600/70">Treasury Balance</div>
                     </div>
                     <div className="p-3 bg-slate-50 rounded-xl text-center">
                       <div className="text-lg font-extrabold text-foreground">{c.proposals}</div>
@@ -129,8 +202,8 @@ export default function CommunityPage() {
                     <Button variant="outline" size="sm" className="flex-1 rounded-xl text-xs border-blue-200 text-blue-600 hover:bg-blue-50">
                       <Users className="w-3.5 h-3.5 mr-1.5" /> Join
                     </Button>
-                    <Button variant="outline" size="sm" className="flex-1 rounded-xl text-xs">
-                      <Wallet2 className="w-3.5 h-3.5 mr-1.5" /> Deposit
+                    <Button onClick={() => !isConnected ? connect() : handleDeposit(c.id)} disabled={depositingTo === c.id} variant="outline" size="sm" className="flex-1 rounded-xl text-xs">
+                      {depositingTo === c.id ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Wallet2 className="w-3.5 h-3.5 mr-1.5" />} Deposit
                     </Button>
                     <Button size="sm" className="flex-1 rounded-xl text-xs bg-gradient-to-r from-primary to-blue-500 text-white">
                       <Vote className="w-3.5 h-3.5 mr-1.5" /> Govern
