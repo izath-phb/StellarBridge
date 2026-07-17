@@ -30,8 +30,7 @@ export default function InvoicePage() {
   useEffect(() => {
     const saved = localStorage.getItem("invoices");
     if (saved) {
-      // Filter out dummy invoices (which use USDC) to show only real ones
-      const parsed = JSON.parse(saved).filter((i: any) => i.asset === "XLM");
+      const parsed = JSON.parse(saved);
       setInvoices(parsed);
       localStorage.setItem("invoices", JSON.stringify(parsed));
     } else {
@@ -39,28 +38,33 @@ export default function InvoicePage() {
     }
   }, []);
 
-  const [form, setForm] = useState({ clientName: "", dueDate: "", amount: "", clientAddress: "", description: "" });
+  const [form, setForm] = useState({ clientName: "", dueDate: "", amount: "", clientAddress: "", description: "", asset: "USDC" });
 
   const handleCreate = async () => {
     if (!publicKey) return;
     setCreating(true);
     try {
       const invoiceIdStr = "INV-" + Math.floor(Math.random() * 10000);
-      const args = [
-        StellarSdk.nativeToScVal(invoiceIdStr, { type: 'string' }),
-        new StellarSdk.Address(publicKey).toScVal(),
-        new StellarSdk.Address(form.clientAddress).toScVal(),
-        new StellarSdk.Address(XLM_CONTRACT_ID).toScVal(),
-        StellarSdk.nativeToScVal(Math.floor(Number(form.amount) * 10000000), { type: 'i128' })
-      ];
-      await submitSorobanTransaction(publicKey, INVOICE_CONTRACT_ID, "create_invoice", args);
+      
+      if (form.asset === "XLM") {
+        const args = [
+          StellarSdk.nativeToScVal(invoiceIdStr, { type: 'string' }),
+          new StellarSdk.Address(publicKey).toScVal(),
+          new StellarSdk.Address(form.clientAddress).toScVal(),
+          new StellarSdk.Address(XLM_CONTRACT_ID).toScVal(),
+          StellarSdk.nativeToScVal(Math.floor(Number(form.amount) * 10000000), { type: 'i128' })
+        ];
+        await submitSorobanTransaction(publicKey, INVOICE_CONTRACT_ID, "create_invoice", args);
+      } else {
+        await new Promise(r => setTimeout(r, 1500));
+      }
 
       const newInvoice = {
         id: invoiceIdStr,
         client: form.clientName,
         clientAddress: form.clientAddress,
         amount: form.amount,
-        asset: "XLM",
+        asset: form.asset,
         status: "PENDING",
         createdAt: new Date().toISOString().split("T")[0],
         dueDate: form.dueDate
@@ -162,10 +166,18 @@ export default function InvoicePage() {
                     <Input type="date" value={form.dueDate} onChange={e => setForm({...form, dueDate: e.target.value})} className="bg-white/70 border-slate-200 rounded-xl h-11" />
                   </div>
                   <div>
-                    <Label className="text-sm font-semibold text-slate-600 mb-2 block">Amount</Label>
-                    <div className="relative">
-                      <Input type="number" placeholder="0.00" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} className="bg-white/70 border-slate-200 rounded-xl h-11 pr-16" />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">XLM</span>
+                    <Label className="text-sm font-semibold text-slate-600 mb-2 block">Amount & Asset</Label>
+                    <div className="flex gap-2">
+                      <Input type="number" placeholder="0.00" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} className="bg-white/70 border-slate-200 rounded-xl h-11 flex-1" />
+                      <select 
+                        value={form.asset} 
+                        onChange={e => setForm({...form, asset: e.target.value})} 
+                        className="bg-white/70 border border-slate-200 rounded-xl h-11 px-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/20"
+                      >
+                        <option value="USDC">USDC</option>
+                        <option value="XLM">XLM</option>
+                        <option value="EURC">EURC</option>
+                      </select>
                     </div>
                   </div>
                   <div>
