@@ -18,7 +18,16 @@ export default function MerchantPage() {
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState(false);
   const [form, setForm] = useState({ name: "", desc: "", category: "" });
+  const [productForm, setProductForm] = useState({ name: "", price: "", category: "" });
   const [merchants, setMerchants] = useState<any[]>(MOCK_MERCHANTS);
+  const [products, setProducts] = useState<any[]>([
+    { id: 1, name: "Website Development", price: "500 USDC", merchant: "Digital Studio Japan", category: "Development" },
+    { id: 2, name: "Logo Design Package", price: "150 USDC", merchant: "Digital Studio Japan", category: "Design" },
+    { id: 3, name: "Mobile App UI Kit", price: "250 USDC", merchant: "GlobalDev Solutions", category: "Design" },
+    { id: 4, name: "SEO Optimization", price: "300 USDC", merchant: "GlobalDev Solutions", category: "Marketing" },
+    { id: 5, name: "API Integration", price: "400 USDC", merchant: "GlobalDev Solutions", category: "Development" },
+    { id: 6, name: "Brand Identity", price: "800 USDC", merchant: "Digital Studio Japan", category: "Branding" },
+  ]);
   const [buyingId, setBuyingId] = useState<number | null>(null);
   const [modalView, setModalView] = useState<{type: string, merchant: any} | null>(null);
 
@@ -29,6 +38,10 @@ export default function MerchantPage() {
     } else {
       setMerchants(MOCK_MERCHANTS);
       localStorage.setItem("merchants", JSON.stringify(MOCK_MERCHANTS));
+    }
+    const savedProducts = localStorage.getItem("products");
+    if (savedProducts) {
+      setProducts(JSON.parse(savedProducts));
     }
   }, []);
 
@@ -55,20 +68,36 @@ export default function MerchantPage() {
     setTimeout(() => setCreated(false), 4000);
   };
 
-  const handleBuy = async (index: number, priceStr: string) => {
+  const handleAddProduct = (merchantName: string) => {
+    if (!productForm.name || !productForm.price) return;
+    const newProduct = {
+      id: Date.now(),
+      name: productForm.name,
+      price: productForm.price + " XLM",
+      merchant: merchantName,
+      category: productForm.category || "General",
+    };
+    const newProducts = [newProduct, ...products];
+    setProducts(newProducts);
+    localStorage.setItem("products", JSON.stringify(newProducts));
+    setProductForm({ name: "", price: "", category: "" });
+  };
+
+  const handleBuy = async (productId: number, priceStr: string, merchantName: string) => {
     if (!isConnected || !publicKey) {
       connect();
       return;
     }
     
     // Extract number and convert to i128 (scaled by 1e7)
-    const amountNum = Number(priceStr.replace(/[^0-9]/g, "")) || 10;
+    const amountNum = Number(priceStr.replace(/[^0-9.]/g, "")) || 10;
     const scaledAmount = Math.floor(amountNum * 10000000);
     
-    const merchant = merchants[index];
+    const mIdx = merchants.findIndex(m => m.name === merchantName);
+    const merchant = mIdx !== -1 ? merchants[mIdx] : null;
     const receiverAddress = merchant?.receiverAddress || MOCK_ISSUER_PUBKEY; // Fallback for mocks
     
-    setBuyingId(index);
+    setBuyingId(productId);
     try {
       const args = [
         new StellarSdk.Address(publicKey).toScVal(),
@@ -79,6 +108,14 @@ export default function MerchantPage() {
       ];
       
       await submitSorobanTransaction(publicKey, PAYMENT_CONTRACT_ID, "send_payment", args);
+      
+      if (mIdx !== -1) {
+        const updatedMerchants = [...merchants];
+        updatedMerchants[mIdx].revenue = (Number(updatedMerchants[mIdx].revenue) + amountNum).toString();
+        updatedMerchants[mIdx].customers = updatedMerchants[mIdx].customers + 1;
+        setMerchants(updatedMerchants);
+        localStorage.setItem("merchants", JSON.stringify(updatedMerchants));
+      }
       
       alert("Purchase successful! Paid " + amountNum + " XLM via smart contract.");
     } catch (err: any) {
@@ -193,15 +230,8 @@ export default function MerchantPage() {
         <div>
           <h2 className="text-xl font-extrabold mb-4 text-slate-800">Featured Products</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[
-              { name: "Website Development", price: "500 USDC", merchant: "Digital Studio Japan", category: "Development" },
-              { name: "Logo Design Package", price: "150 USDC", merchant: "Digital Studio Japan", category: "Design" },
-              { name: "Mobile App UI Kit", price: "250 USDC", merchant: "GlobalDev Solutions", category: "Design" },
-              { name: "SEO Optimization", price: "300 USDC", merchant: "GlobalDev Solutions", category: "Marketing" },
-              { name: "API Integration", price: "400 USDC", merchant: "GlobalDev Solutions", category: "Development" },
-              { name: "Brand Identity", price: "800 USDC", merchant: "Digital Studio Japan", category: "Branding" },
-            ].map((p, i) => (
-              <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}>
+            {products.map((p, i) => (
+              <motion.div key={p.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}>
                 <Card className="glass-panel border-0 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-200">
                   <CardContent className="p-4">
                     <div className="w-full h-28 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-xl mb-3 flex items-center justify-center">
@@ -212,8 +242,8 @@ export default function MerchantPage() {
                     <div className="text-xs text-slate-400 mb-3">{p.merchant}</div>
                     <div className="flex items-center justify-between">
                       <span className="font-extrabold text-foreground">{p.price}</span>
-                      <Button onClick={() => handleBuy(i, p.price)} disabled={buyingId === i} size="sm" className="h-8 rounded-full px-4 text-xs bg-gradient-to-r from-primary to-blue-500 text-white">
-                         {buyingId === i ? <Loader2 className="w-3 h-3 animate-spin" /> : "Buy"}
+                      <Button onClick={() => handleBuy(p.id, p.price, p.merchant)} disabled={buyingId === p.id} size="sm" className="h-8 rounded-full px-4 text-xs bg-gradient-to-r from-primary to-blue-500 text-white">
+                         {buyingId === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : "Buy"}
                       </Button>
                     </div>
                   </CardContent>
@@ -239,8 +269,41 @@ export default function MerchantPage() {
               <div className="text-center">
                 <Package className="w-12 h-12 text-primary mx-auto mb-4 opacity-80" />
                 <h3 className="text-lg font-extrabold text-slate-800 mb-2">{modalView.merchant.name} Products</h3>
-                <p className="text-sm text-slate-500 mb-6">Manage your inventory, set prices in USDC/XLM, and view stock levels directly on-chain.</p>
-                <div className="bg-slate-50 rounded-xl p-4 text-xs font-mono text-slate-400">List is empty. Add a product to begin!</div>
+                <p className="text-sm text-slate-500 mb-4">Manage your inventory and set prices in XLM directly on-chain.</p>
+                
+                <div className="text-left mb-6">
+                  {products.filter(p => p.merchant === modalView.merchant.name).length === 0 ? (
+                    <div className="bg-slate-50 rounded-xl p-4 text-xs font-mono text-slate-400 text-center">List is empty. Add a product to begin!</div>
+                  ) : (
+                    <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
+                      {products.filter(p => p.merchant === modalView.merchant.name).map(p => (
+                        <div key={p.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg text-sm border border-slate-100">
+                          <div>
+                            <div className="font-bold text-slate-800">{p.name}</div>
+                            <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">{p.category}</div>
+                          </div>
+                          <div className="font-extrabold text-primary">{p.price}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {modalView.merchant.receiverAddress === publicKey && (
+                  <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl text-left">
+                    <h4 className="text-xs font-bold text-slate-700 mb-3 uppercase tracking-wider flex items-center gap-1.5"><Plus className="w-3.5 h-3.5" /> Add New Product</h4>
+                    <div className="space-y-3">
+                      <Input placeholder="Product Name (e.g. Logo Design)" value={productForm.name} onChange={e => setProductForm({...productForm, name: e.target.value})} className="h-9 text-xs bg-white" />
+                      <div className="grid grid-cols-2 gap-2">
+                        <Input placeholder="Price (XLM)" type="number" value={productForm.price} onChange={e => setProductForm({...productForm, price: e.target.value})} className="h-9 text-xs bg-white" />
+                        <Input placeholder="Category" value={productForm.category} onChange={e => setProductForm({...productForm, category: e.target.value})} className="h-9 text-xs bg-white" />
+                      </div>
+                      <Button onClick={() => handleAddProduct(modalView.merchant.name)} disabled={!productForm.name || !productForm.price} className="w-full h-9 text-xs bg-slate-800 text-white hover:bg-slate-700">
+                        Add to Store
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             

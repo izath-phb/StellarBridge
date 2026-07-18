@@ -241,7 +241,14 @@ export default function InvoicePage() {
                     </div>
                     <div className="mt-4 flex gap-2 border-t border-slate-100 pt-4">
                       {inv.status === "PENDING" && (
-                        <Button onClick={() => !isConnected ? connect() : handlePay(inv.id)} disabled={processingId === inv.id} size="sm" className="rounded-full text-xs bg-gradient-to-r from-primary to-blue-500 text-white">
+                        <Button onClick={() => {
+                          if (!isConnected) return connect();
+                          if (inv.clientAddress && publicKey !== inv.clientAddress) {
+                            alert(`Only the client wallet (${inv.clientAddress.slice(0, 4)}...${inv.clientAddress.slice(-4)}) can pay this invoice. Please switch your Freighter account.`);
+                            return;
+                          }
+                          handlePay(inv.id);
+                        }} disabled={processingId === inv.id} size="sm" className="rounded-full text-xs bg-gradient-to-r from-primary to-blue-500 text-white">
                           {processingId === inv.id ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null} Pay Invoice
                         </Button>
                       )}
