@@ -43,6 +43,14 @@ const WalletContext = createContext<WalletContextType | undefined>(undefined);
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [isConnected, setIsConnected] = useState(false);
   const [publicKey, setPublicKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    const savedKey = localStorage.getItem("sb_wallet_pubkey");
+    if (savedKey) {
+      setPublicKey(savedKey);
+      setIsConnected(true);
+    }
+  }, []);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -103,7 +111,30 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                 hash: p.transaction_hash.slice(0, 9),
               };
             });
-          setTransactions(parsedTxs);
+
+          // Load local escrows for demo purposes so they appear in history
+          let localTxs: any[] = [];
+          try {
+            const savedEscrows = localStorage.getItem("sb_escrows");
+            if (savedEscrows) {
+              JSON.parse(savedEscrows).forEach((e: any) => {
+                localTxs.push({
+                  id: e.id,
+                  type: "escrow",
+                  amount: e.amount || "0",
+                  asset: e.asset || "USDC",
+                  from: e.client === "You" ? "You" : (e.client || "Client").slice(0, 8),
+                  to: e.freelancer === "You" ? "You" : (e.freelancer || "Freelancer").slice(0, 8),
+                  date: e.createdAt || new Date().toISOString().split("T")[0],
+                  status: e.status || "PENDING",
+                  hash: "contract_call",
+                });
+              });
+            }
+          } catch(e) {}
+
+          const allTxs = [...parsedTxs, ...localTxs].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          setTransactions(allTxs);
         } catch (e) {
           console.error("Error fetching balance/txs:", e);
           setBalances({ XLM: "0.00", USDC: "0.00", EURC: "0.00" });
@@ -210,6 +241,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           if (pkRes.address) {
             setPublicKey(pkRes.address);
             setIsConnected(true);
+            localStorage.setItem("sb_wallet_pubkey", pkRes.address);
             setIsModalOpen(false);
             return;
           }
@@ -223,6 +255,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         const demoKey = "GDEMO...FREIGHTER" + Math.random().toString(36).substring(7).toUpperCase();
         setPublicKey(demoKey);
         setIsConnected(true);
+        localStorage.setItem("sb_wallet_pubkey", demoKey);
         setIsModalOpen(false);
         return;
       } else if (walletId === "albedo") {
@@ -230,6 +263,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         if (res.pubkey) {
           setPublicKey(res.pubkey);
           setIsConnected(true);
+          localStorage.setItem("sb_wallet_pubkey", res.pubkey);
           setIsModalOpen(false);
           return;
         }
@@ -241,6 +275,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           if (pk) {
             setPublicKey(pk);
             setIsConnected(true);
+            localStorage.setItem("sb_wallet_pubkey", pk);
             setIsModalOpen(false);
             return;
           }
@@ -260,6 +295,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const disconnect = () => {
     setIsConnected(false);
     setPublicKey(null);
+    localStorage.removeItem("sb_wallet_pubkey");
   };
 
   const wallets = [

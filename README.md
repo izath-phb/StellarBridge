@@ -33,7 +33,8 @@ StellarBridge solves these problems by providing an all-in-one Web3 ecosystem:
 - **Global Payment System:** Send and receive payments instantly with near-zero fees.
 - **Soroban Escrow:** Trustless payments for freelancers and clients using smart contracts.
 - **Merchant Platform:** Generate invoices, QR codes, and receive Stellar payments effortlessly.
-- **Tokenized Invoices:** Turn invoices into verifiable digital assets on the blockchain.
+- **Tokenized Invoices (Multi-Asset):** Turn invoices into verifiable digital assets on the blockchain, with support for payments in XLM, USDC, and EURC.
+- **Persistent Wallet Connection:** Seamlessly reconnects your Freighter, Albedo, or xBull wallet across sessions for a smooth Web3 experience.
 - **Community DAO:** Transparent treasury management and voting for organizations.
 - **Reputation System:** On-chain trust scoring based on successful transactions.
 - **AI Financial Assistant:** Intelligent analytics for personal and merchant finances.

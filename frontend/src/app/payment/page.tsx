@@ -35,9 +35,14 @@ export default function PaymentPage() {
           const StellarSdk = await import("@stellar/stellar-sdk");
           const server = new StellarSdk.Horizon.Server("https://horizon-testnet.stellar.org");
           const payments = await server.payments().forAccount(publicKey).order("desc").limit(10).call();
-          
-          const formatted = payments.records.map((r: any) => {
-            const isReceived = r.to === publicKey;
+          const formatted = payments.records
+            .filter((r: any) => r.type === "payment" || r.type === "create_account")
+            .map((r: any) => {
+            const isReceived = r.type === "payment" ? r.to === publicKey : r.account === publicKey;
+            const fromAcc = r.type === "payment" ? r.from : r.funder;
+            const toAcc = r.type === "payment" ? r.to : r.account;
+            const amount = r.type === "payment" ? r.amount : r.starting_balance;
+            
             let assetStr = "XLM";
             if (r.asset_type !== "native") {
                assetStr = r.asset_code || "TOKEN";
@@ -45,10 +50,10 @@ export default function PaymentPage() {
             return {
               id: r.id,
               type: isReceived ? "received" : "sent",
-              amount: r.amount || "0",
+              amount: amount || "0",
               asset: assetStr,
-              from: r.from ? `${r.from.slice(0, 4)}...${r.from.slice(-4)}` : "Unknown",
-              to: r.to ? `${r.to.slice(0, 4)}...${r.to.slice(-4)}` : "Unknown",
+              from: fromAcc ? `${fromAcc.slice(0, 4)}...${fromAcc.slice(-4)}` : "Unknown",
+              to: toAcc ? `${toAcc.slice(0, 4)}...${toAcc.slice(-4)}` : "Unknown",
               date: new Date(r.created_at).toISOString().split('T')[0],
               status: "SUCCESS"
             };
